@@ -3,9 +3,6 @@ import type { Bindings } from '../types'
 
 const app = new Hono<{ Bindings: Bindings }>()
 
-// ==========================================
-// 🛠️ CONSTANTS & REGEX (Senior Level Approach)
-// ==========================================
 const INTENT_REGEX = {
   GREETING: /^(hey|hello|hi|namaste|greetings)\b/i,
   AFFIRMATION: /^(yes|yeah|yep|ok|okay|sure|ha|haan|ji|absolutely)\b/i,
@@ -21,9 +18,7 @@ const SERVICE_KEYWORDS = [
   { key: 'clean', regex: /\b(clean\w*|sweep|mop|maid)\b/i },
 ];
 
-// ==========================================
-// 🧩 HELPER FUNCTIONS
-// ==========================================
+
 const detectKeyword = (msg: string): string | null => {
   for (const service of SERVICE_KEYWORDS) {
     if (service.regex.test(msg)) return service.key;
@@ -37,9 +32,6 @@ const saveConversation = async (db: D1Database, sessionId: string, userMsg: stri
   ).bind(sessionId, userMsg, sessionId, aiMsg).run();
 };
 
-// ==========================================
-// 🚀 MAIN ROUTE HANDLER
-// ==========================================
 app.post('/', async (c) => {
   try {
     const body = await c.req.json();
@@ -64,9 +56,7 @@ app.post('/', async (c) => {
 
     let reply = "";
 
-    // ==========================================
-    // 🧠 ROUTING ENGINE (Clean Control Flow)
-    // ==========================================
+   
 
     const keyword = detectKeyword(msg);
     const wantsBooking = INTENT_REGEX.BOOKING.test(msg);
