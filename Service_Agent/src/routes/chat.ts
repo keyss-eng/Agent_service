@@ -11,13 +11,11 @@ const INTENT_REGEX = {
 };
 
 const SERVICE_KEYWORDS = [
-  // \w* add karne se electric, electrician, electrical sab match honge!
   { key: 'electric', regex: /\b(electric\w*|wiring|wire|switch)\b/i },
   { key: 'plumb', regex: /\b(plumb\w*|pipe|leak|sink)\b/i },
   { key: 'repair', regex: /\b(ac|repair|service|cooling|appliance)\b/i },
   { key: 'clean', regex: /\b(clean\w*|sweep|mop|maid)\b/i },
 ];
-
 
 const detectKeyword = (msg: string): string | null => {
   for (const service of SERVICE_KEYWORDS) {
@@ -56,22 +54,18 @@ app.post('/', async (c) => {
 
     let reply = "";
 
-   
-
     const keyword = detectKeyword(msg);
     const wantsBooking = INTENT_REGEX.BOOKING.test(msg);
     const wantsPrice = INTENT_REGEX.PRICE.test(msg);
 
     // ROUTE A: GREETINGS
     if (INTENT_REGEX.GREETING.test(msg)) {
-      reply = `Hello ${userName}! 👋 Welcome to Agent Services. How can I help you today?`;
+      reply = `Hello ${userName}! 👋 Welcome to UttamSewa. How can I help you today?`;
     } 
-    
-    // ROUTE B: CONTEXTUAL FOLLOW-UP (Yes/Ok)
+    // ROUTE B: CONTEXTUAL FOLLOW-UP
     else if (INTENT_REGEX.AFFIRMATION.test(msg) && (lastAssistantMsg.includes("book this") || lastAssistantMsg.includes("schedule"))) {
       reply = "Great! Please navigate to the Booking tab at the top to select your preferred date and time.";
     }
-
     // ROUTE C: EXPLICIT BOOKING REQUEST
     else if (wantsBooking) {
       if (keyword) {
@@ -83,8 +77,7 @@ app.post('/', async (c) => {
         reply = "I can help you book! Which specific service do you need? (e.g., Electrician, Cleaning, Plumbing, AC Repair)";
       }
     }
-
-    // ROUTE D: SPECIFIC SERVICE INQUIRY (Details or Price)
+    // ROUTE D: SPECIFIC SERVICE INQUIRY
     else if (keyword) {
       const { results } = await db.prepare("SELECT name, price, description FROM services WHERE name LIKE ? OR category LIKE ? LIMIT 1").bind(`%${keyword}%`, `%${keyword}%`).all();
       
@@ -95,7 +88,6 @@ app.post('/', async (c) => {
           : `${s.name}:\nDetails: ${s.description || "Professional service"}.\nPrice: ₹${s.price}.\nWould you like to book this?`;
       }
     }
-
     // ROUTE E: GENERAL PRICE LIST
     else if (wantsPrice) {
       const { results } = await db.prepare("SELECT name, price FROM services ORDER BY price ASC LIMIT 5").all();
@@ -104,7 +96,9 @@ app.post('/', async (c) => {
 
     // ROUTE F: AI FALLBACK (LLaMA-3)
     if (!reply) {
+      // Format history correctly for LLaMA (Oldest to Newest)
       const formattedHistory = history.reverse().map((row: any) => ({ role: row.role, content: row.content }));
+      
       const messages = [
         { role: 'system', content: `You are a professional home services assistant for a platform called UttamSewa. You are assisting ${userName}. Keep answers helpful, polite, and under 3 sentences.` },
         ...formattedHistory,
@@ -116,7 +110,7 @@ app.post('/', async (c) => {
         reply = aiRes.response || "I am currently upgrading my systems. Please try asking about our prices or specific services!";
       } catch (err) {
         console.error("[AI ERROR]:", err);
-        reply = "I'm having a little trouble connecting to my AI core. I can still help you check prices or book an electrician/plumber!";
+        reply = "I'm having a little trouble connecting to my AI core right now. I can still help you check prices or book an electrician/plumber!";
       }
     }
 

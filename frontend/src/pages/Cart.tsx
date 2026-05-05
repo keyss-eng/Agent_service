@@ -101,7 +101,9 @@ export default function Cart() {
                 </div>
 
                 <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-1.5">
+                  {/* FIXED: Added "Platform Fee" text here */}
+                  <div className="flex items-center gap-1.5 text-slate-600">
+                    <span>Platform Fee</span>
                     <span title="Helps us maintain the platform and support workers" className="flex items-center cursor-help">
                       <Info size={14} className="text-slate-400" />
                     </span>

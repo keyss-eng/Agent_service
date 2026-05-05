@@ -1,20 +1,24 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "service_agent",
-  "main": "src/index.ts",
-  "compatibility_date": "2026-05-04",
-
-  "ai": {
-    "binding": "AI",
-    "remote": true
-  },
-
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "agent-db",
-      "database_id": "b10dec94-1e53-4811-af8c-9274f2c8042b",
-      // "remote": true
-    }
-  ]
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "service_agent",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-05-04",
+	"ai": {
+		"binding": "AI",
+		"remote": true
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "agent-db",
+			"database_id": "b10dec94-1e53-4811-af8c-9274f2c8042b",
+			// "remote": true
+		},
+		{
+			"binding": "Agent_DB",
+			"database_name": "Agent_DB",
+			"database_id": "35863c3b-8b49-4619-88c8-89acf1110b7c",
+			// "remote": true
+		}
+	]
 }

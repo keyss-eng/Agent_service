@@ -81,7 +81,7 @@ export default function Chat() {
           </div>
           <div>
             <h2 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-              Agent service AI Assistant
+              UttamSewa AI Assistant
               <ShieldCheck size={14} className="text-sky-500" />
             </h2>
             <p className="text-xs text-slate-500 font-medium flex items-center gap-1">

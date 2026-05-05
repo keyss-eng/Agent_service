@@ -1,4 +1,3 @@
-// src/routes/booking.ts
 import { Hono } from 'hono'
 import type { Bindings } from '../types'
 
@@ -19,6 +18,31 @@ app.post('/', async (c) => {
     return c.json({ success: true })
   } catch (error: any) {
     console.error("Database error:", error.message)
+    return c.json({ success: false, error: error.message }, 500)
+  }
+})
+
+// src/routes/booking.ts (Backend)
+
+// GET user bookings
+app.get('/', async (c) => {
+  const userName = c.req.query('user_name')
+  
+  if (!userName) {
+    return c.json({ success: false, error: 'User name is required' }, 400)
+  }
+
+  try {
+    const { results } = await c.env.DB.prepare(
+      `SELECT bookings.*, services.name as service_name 
+       FROM bookings 
+       LEFT JOIN services ON bookings.service_id = services.id 
+       WHERE user_name = ? 
+       ORDER BY booking_date DESC, booking_time DESC`
+    ).bind(userName).all()
+
+    return c.json({ success: true, bookings: results })
+  } catch (error: any) {
     return c.json({ success: false, error: error.message }, 500)
   }
 })
