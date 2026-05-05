@@ -1,242 +1,233 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { API } from "../api/api"
 import { useAuth } from "../context/AuthContext"
-import { useCart } from "../context/CartContext"
 import { useNavigate } from "react-router-dom"
 import { 
   CalendarDays, 
   Clock, 
   CheckCircle2, 
-  ShieldCheck, 
+  XCircle,
+  AlertCircle,
   ArrowRight,
-  User,
-  ShoppingBag
+  SearchX,
+  ChevronRight,
+  Filter
 } from "lucide-react"
 
-export default function Booking() {
+// Updated Interface with Status
+interface BookingRecord {
+  id: number;
+  service_id: number;
+  booking_date: string;
+  booking_time: string;
+  created_at: string;
+  service_name?: string; 
+  status: string; // Database se aane wala status (Pending/Confirmed/Cancelled)
+}
+
+const FILTER_OPTIONS = ["All", "Pending", "Confirmed", "Cancelled"];
+
+export default function MyBookings() {
   const { user } = useAuth()
-  const { cart, clearCart } = useCart()
   const navigate = useNavigate()
-
-  const [date, setDate] = useState("")
-  const [time, setTime] = useState("")
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [isSuccess, setIsSuccess] = useState(false)
-  const [error, setError] = useState("")
-
-  // Get today's date in YYYY-MM-DD format to prevent booking in the past
-  const today = new Date().toISOString().split('T')[0]
   
-  // Calculate totals
-  const subtotal = cart.reduce((sum, item) => sum + item.price, 0)
-  const platformFee = cart.length > 0 ? 49 : 0
-  const finalTotal = subtotal + platformFee
+  const [bookings, setBookings] = useState<BookingRecord[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState("")
+  
+  // 👈 New State for Filter
+  const [activeFilter, setActiveFilter] = useState("All") 
 
-  const handleBooking = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError("")
-
-    if (!user) {
-      setError("Session expired. Please log in again.")
-      setTimeout(() => navigate("/"), 2000)
-      return
-    }
-
-    if (cart.length === 0) {
-      setError("Your cart is empty. Please add services before booking.")
-      return
-    }
-
-    setIsSubmitting(true)
-    try {
-      // We take the first item's ID to satisfy the current backend schema. 
-      // In the future, you can upgrade the backend to accept an array of IDs!
-      const primaryServiceId = cart[0].id
-
-      const res = await API.post("/book", {
-        user_name: user.name, 
-        service_id: primaryServiceId,      
-        date,
-        time,
-      })
-
-      if (res.data.success) {
-        setIsSuccess(true)
-        clearCart() // Empty the cart on successful booking
-      } else {
-        setError(res.data.error || "Failed to confirm booking.")
+  useEffect(() => {
+    const fetchMyBookings = async () => {
+      if (!user) return;
+      
+      try {
+        const res = await API.get(`/booking?user_name=${user.name}`)
+        
+        if (res.data.success) {
+          setBookings(res.data.bookings || [])
+        } else {
+          setError("Failed to load your bookings.")
+        }
+      } catch (err) {
+        console.error("Error fetching bookings:", err)
+        setError("Unable to connect to the server.")
+      } finally {
+        setIsLoading(false)
       }
-    } catch (err) {
-      console.error("Booking failed:", err)
-      setError("Failed to connect to the server. Please try again.")
-    } finally {
-      setIsSubmitting(false)
     }
-  }
 
-  // 🎉 SUCCESS STATE UI
-  if (isSuccess) {
-    return (
-      <div className="min-h-[80vh] flex items-center justify-center bg-slate-50 px-4">
-        <div className="bg-white p-10 rounded-3xl shadow-sm border border-slate-200 text-center max-w-md w-full">
-          <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-6">
-            <CheckCircle2 className="w-10 h-10 text-green-500" />
+    fetchMyBookings()
+  }, [user])
+
+  // 👈 Logic to filter bookings based on selected tab
+  const filteredBookings = bookings.filter(booking => {
+    if (activeFilter === "All") return true;
+    return booking.status === activeFilter;
+  });
+
+  // --- Helper to render dynamic status badge ---
+  const StatusBadge = ({ status }: { status: string }) => {
+    switch (status) {
+      case 'Cancelled':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-50 text-red-600 text-[10px] font-bold uppercase tracking-wide border border-red-100">
+            <XCircle size={12} /> Cancelled
+          </span>
+        );
+      case 'Pending':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-600 text-[10px] font-bold uppercase tracking-wide border border-amber-100">
+            <AlertCircle size={12} /> Pending
+          </span>
+        );
+      default:
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold uppercase tracking-wide border border-emerald-100">
+            <CheckCircle2 size={12} /> Confirmed
+          </span>
+        );
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-4xl mx-auto">
+        
+        {/* Header Section */}
+        <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div className="text-center md:text-left">
+            <h1 className="text-4xl font-black text-slate-900 tracking-tight">My Bookings</h1>
+            <p className="text-slate-500 mt-2 font-medium">Manage your service history with BOOKSS</p>
           </div>
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">Booking Confirmed!</h2>
-          <p className="text-slate-500 mb-8">
-            Thank you, {user?.name}. Your service has been scheduled for <span className="font-semibold text-slate-700">{date}</span> at <span className="font-semibold text-slate-700">{time}</span>.
-          </p>
+          <div className="bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm self-center md:self-end">
+            <span className="text-sm font-bold text-slate-600">{bookings.length} Total Bookings</span>
+          </div>
+        </div>
+
+        {/* 👈 Filter Tabs Section */}
+        <div className="mb-8 flex items-center gap-3 overflow-x-auto pb-2 no-scrollbar">
+          <div className="flex items-center gap-2 text-slate-400 mr-2">
+            <Filter size={18} />
+          </div>
+          {FILTER_OPTIONS.map((filter) => (
+            <button
+              key={filter}
+              onClick={() => setActiveFilter(filter)}
+              className={`px-6 py-2.5 rounded-full text-sm font-bold whitespace-nowrap transition-all active:scale-95 ${
+                activeFilter === filter
+                  ? "bg-slate-900 text-white shadow-md shadow-slate-900/20"
+                  : "bg-white text-slate-600 border border-slate-200 hover:border-sky-300 hover:text-sky-600"
+              }`}
+            >
+              {filter}
+              <span className={`ml-2 px-2 py-0.5 rounded-full text-[10px] ${
+                activeFilter === filter ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"
+              }`}>
+                {filter === "All" ? bookings.length : bookings.filter(b => b.status === filter).length}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {error && (
+          <div className="mb-8 bg-red-50 text-red-600 p-4 rounded-2xl border border-red-100 text-sm font-bold flex items-center gap-3 animate-in fade-in">
+            <AlertCircle size={18} /> {error}
+          </div>
+        )}
+
+        {isLoading ? (
+          <div className="space-y-6">
+            {[1, 2, 3].map((n) => (
+              <div key={n} className="h-32 bg-white border border-slate-200 rounded-[2rem] animate-pulse"></div>
+            ))}
+          </div>
+        ) : filteredBookings.length === 0 ? (
+          <div className="bg-white py-20 px-6 text-center rounded-[3rem] border border-slate-200 shadow-sm flex flex-col items-center animate-in zoom-in duration-500">
+            <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center mb-6">
+              <SearchX className="w-12 h-12 text-slate-300" />
+            </div>
+            <h3 className="text-2xl font-black text-slate-900 mb-3">
+              {activeFilter === "All" ? "No bookings yet" : `No ${activeFilter.toLowerCase()} bookings`}
+            </h3>
+            <p className="text-slate-500 max-w-sm mb-10 font-medium">
+              {activeFilter === "All" 
+                ? "Ready to make your home shine? Explore our top-rated services and book your first one today."
+                : `You don't have any bookings with a '${activeFilter}' status right now.`}
+            </p>
+            {activeFilter === "All" && (
+              <button 
+                onClick={() => navigate('/home')}
+                className="bg-slate-900 hover:bg-sky-600 text-white font-bold py-4 px-10 rounded-2xl transition-all shadow-xl shadow-slate-900/10 flex items-center gap-2 active:scale-95"
+              >
+                Start Exploring <ArrowRight size={20} />
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {filteredBookings.map((booking) => (
+              <div 
+                key={booking.id} 
+                className={`group relative bg-white p-6 sm:p-8 rounded-[2.5rem] border transition-all duration-300 flex flex-col sm:flex-row sm:items-center justify-between gap-8 ${
+                  booking.status === 'Cancelled' 
+                  ? "border-slate-100 bg-slate-50/50 opacity-80" 
+                  : "border-slate-200 shadow-sm hover:shadow-2xl hover:shadow-sky-500/10 hover:border-sky-200 hover:-translate-y-1"
+                }`}
+              >
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-4">
+                    <StatusBadge status={booking.status} />
+                    <span className="text-[11px] font-black text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md">
+                      #{booking.id.toString().padStart(4, '0')}
+                    </span>
+                  </div>
+                  
+                  <h3 className={`text-xl font-black transition-colors ${
+                    booking.status === 'Cancelled' ? "text-slate-400 line-through" : "text-slate-900 group-hover:text-sky-600"
+                  }`}>
+                    {booking.service_name || `Service Appointment`}
+                  </h3>
+                  <p className="text-sm text-slate-500 mt-2 font-medium flex items-center gap-1">
+                    Booked for <span className="text-slate-900 font-bold">{user?.name}</span>
+                  </p>
+                </div>
+
+                <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2.5 text-slate-700 font-bold bg-white px-4 py-2 rounded-xl border border-slate-100 sm:border-none sm:p-0">
+                      <CalendarDays className="text-sky-500 w-5 h-5" />
+                      {booking.booking_date}
+                    </div>
+                    <div className="flex items-center gap-2.5 text-slate-700 font-bold bg-white px-4 py-2 rounded-xl border border-slate-100 sm:border-none sm:p-0">
+                      <Clock className="text-sky-500 w-5 h-5" />
+                      {booking.booking_time}
+                    </div>
+                  </div>
+                  {booking.status !== 'Cancelled' && (
+                    <ChevronRight className="hidden sm:block text-slate-300 group-hover:text-sky-400 group-hover:translate-x-1 transition-all" />
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        
+        {/* Help Banner */}
+        <div className="mt-16 bg-gradient-to-r from-sky-500 to-blue-600 rounded-[3rem] p-8 md:p-12 text-white flex flex-col md:flex-row items-center justify-between gap-8 shadow-2xl shadow-sky-500/20">
+          <div className="text-center md:text-left">
+            <h2 className="text-2xl font-black mb-2">Need help with a booking?</h2>
+            <p className="text-sky-100 font-medium">Our support team is available 24/7 to assist you.</p>
+          </div>
           <button 
-            onClick={() => navigate('/home')}
-            className="w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold py-3.5 rounded-xl transition-all"
+            onClick={() => navigate('/chat')}
+            className="whitespace-nowrap bg-white text-sky-600 font-black py-4 px-8 rounded-2xl hover:bg-sky-50 transition-all active:scale-95 shadow-lg"
           >
-            Return Home
+            Chat with BOOKSS AI
           </button>
         </div>
-      </div>
-    )
-  }
 
-  // 📅 BOOKING FORM UI
-  return (
-    <div className="min-h-screen bg-slate-50 py-10 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-6xl mx-auto">
-        
-        <div className="mb-8">
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Finalize Booking</h1>
-          <p className="text-slate-500 mt-2">Choose a date and time for your service</p>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          
-          {/* LEFT COLUMN: Booking Form */}
-          <div className="lg:col-span-7 space-y-6">
-            
-            {/* Error Alert */}
-            {error && (
-              <div className="bg-red-50 text-red-600 p-4 rounded-xl border border-red-100 text-sm font-medium">
-                {error}
-              </div>
-            )}
-
-            <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-sm border border-slate-200">
-              <h2 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
-                <CalendarDays className="text-sky-500" />
-                Schedule Details
-              </h2>
-              
-              <form onSubmit={handleBooking} className="space-y-6">
-                
-                {/* User Info (Read Only) */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Booking For</label>
-                  <div className="flex items-center gap-3 w-full border border-slate-200 bg-slate-50 rounded-xl p-3.5 text-slate-600">
-                    <User size={18} className="text-slate-400" />
-                    <span className="font-medium">{user?.name || "Guest"}</span>
-                    <span className="text-slate-400 text-sm ml-auto">{user?.email}</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  {/* Date Input */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Select Date</label>
-                    <div className="relative">
-                      <input 
-                        type="date"
-                        required
-                        min={today}
-                        disabled={isSubmitting || cart.length === 0}
-                        className="w-full border border-slate-300 rounded-xl p-3.5 pl-10 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none transition-all disabled:opacity-50 disabled:bg-slate-50" 
-                        value={date}
-                        onChange={(e) => setDate(e.target.value)} 
-                      />
-                      <CalendarDays className="absolute left-3.5 top-3.5 h-5 w-5 text-slate-400 pointer-events-none" />
-                    </div>
-                  </div>
-
-                  {/* Time Input */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Select Time</label>
-                    <div className="relative">
-                      <input 
-                        type="time"
-                        required
-                        disabled={isSubmitting || cart.length === 0}
-                        className="w-full border border-slate-300 rounded-xl p-3.5 pl-10 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none transition-all disabled:opacity-50 disabled:bg-slate-50" 
-                        value={time}
-                        onChange={(e) => setTime(e.target.value)} 
-                      />
-                      <Clock className="absolute left-3.5 top-3.5 h-5 w-5 text-slate-400 pointer-events-none" />
-                    </div>
-                  </div>
-                </div>
-
-                <button 
-                  type="submit"
-                  disabled={isSubmitting || cart.length === 0}
-                  className="w-full bg-sky-500 hover:bg-sky-600 text-white font-bold py-4 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-70 disabled:hover:bg-sky-500"
-                >
-                  {isSubmitting ? "Processing..." : "Confirm Schedule"}
-                  {!isSubmitting && <ArrowRight size={18} />}
-                </button>
-              </form>
-            </div>
-          </div>
-
-          {/* RIGHT COLUMN: Service Summary */}
-          <div className="lg:col-span-5">
-            <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-sm border border-slate-200 sticky top-24">
-              <h2 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
-                <ShoppingBag className="text-sky-500" />
-                Service Summary
-              </h2>
-
-              {cart.length === 0 ? (
-                <div className="text-center py-8 bg-slate-50 rounded-xl border border-slate-200 border-dashed">
-                  <p className="text-slate-500 text-sm">Your cart is empty.</p>
-                </div>
-              ) : (
-                <>
-                  <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 mb-6">
-                    {cart.map((item, idx) => (
-                      <div key={idx} className="flex justify-between items-start pb-4 border-b border-slate-100 last:border-0 last:pb-0">
-                        <div>
-                          <p className="font-semibold text-slate-800 line-clamp-1">{item.name}</p>
-                          <p className="text-xs text-slate-500 mt-0.5">{item.category}</p>
-                        </div>
-                        <span className="font-bold text-slate-900">₹{item.price}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="border-t border-slate-100 pt-4 space-y-3 mb-6 text-sm text-slate-600">
-                    <div className="flex justify-between">
-                      <span>Subtotal</span>
-                      <span className="font-medium text-slate-900">₹{subtotal}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Platform Fee</span>
-                      <span className="font-medium text-slate-900">₹{platformFee}</span>
-                    </div>
-                    <div className="flex justify-between items-center pt-3 border-t border-slate-100">
-                      <span className="text-base font-bold text-slate-900">Total to Pay</span>
-                      <span className="text-2xl font-extrabold text-sky-500">₹{finalTotal}</span>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              <div className="flex items-start gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100">
-                <ShieldCheck className="text-slate-500 w-5 h-5 flex-shrink-0" />
-                <p className="text-xs text-slate-600 font-medium">
-                  Payment will be collected by the professional after the service is completed to your satisfaction.
-                </p>
-              </div>
-            </div>
-          </div>
-
-        </div>
       </div>
     </div>
   )

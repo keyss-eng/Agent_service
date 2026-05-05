@@ -1,28 +1,7 @@
 import { Hono } from 'hono'
 import type { Bindings } from '../types'
 
-const app = new Hono<{ Bindings: Bindings }>()
-
-const INTENT_REGEX = {
-  GREETING: /^(hey|hello|hi|namaste|greetings)\b/i,
-  AFFIRMATION: /^(yes|yeah|yep|ok|okay|sure|ha|haan|ji|absolutely)\b/i,
-  BOOKING: /\b(book|schedule|hire|appointment)\b/i,
-  PRICE: /\b(cheap|price|cost|rate|charges|list|fee)\b/i,
-};
-
-const SERVICE_KEYWORDS = [
-  { key: 'electric', regex: /\b(electric\w*|wiring|wire|switch)\b/i },
-  { key: 'plumb', regex: /\b(plumb\w*|pipe|leak|sink)\b/i },
-  { key: 'repair', regex: /\b(ac|repair|service|cooling|appliance)\b/i },
-  { key: 'clean', regex: /\b(clean\w*|sweep|mop|maid)\b/i },
-];
-
-const detectKeyword = (msg: string): string | null => {
-  for (const service of SERVICE_KEYWORDS) {
-    if (service.regex.test(msg)) return service.key;
-  }
-  return null;
-};
+const chat = new Hono<{ Bindings: Bindings }>()
 
 const saveConversation = async (db: D1Database, sessionId: string, userMsg: string, aiMsg: string) => {
   await db.prepare(
@@ -30,98 +9,193 @@ const saveConversation = async (db: D1Database, sessionId: string, userMsg: stri
   ).bind(sessionId, userMsg, sessionId, aiMsg).run();
 };
 
-app.post('/', async (c) => {
+chat.post('/', async (c) => {
   try {
     const body = await c.req.json();
-    const sessionId = body.sessionId;
-    const message = body.message;
-    const userName = body.userName || "Guest";
-
-    if (!sessionId || !message) {
-      return c.json({ error: "Missing required fields: sessionId or message" }, 400);
-    }
-
-    const db = c.env.DB;
+    const { sessionId, message, userName } = body;
     const msg = String(message).toLowerCase().trim();
-
-    // 1. FETCH CONTEXT (Memory)
-    const { results: history } = await db.prepare(
-      'SELECT role, content FROM conversations WHERE session_id = ? ORDER BY id DESC LIMIT 6'
-    ).bind(sessionId).all();
-
-    const lastRow = history.find((row: any) => row.role === 'assistant') as { content: string } | undefined;
-    const lastAssistantMsg = lastRow?.content ? String(lastRow.content).toLowerCase() : "";
+    const db = c.env.DB;
 
     let reply = "";
+    let options: string[] = [];
 
-    const keyword = detectKeyword(msg);
-    const wantsBooking = INTENT_REGEX.BOOKING.test(msg);
-    const wantsPrice = INTENT_REGEX.PRICE.test(msg);
-
-    // ROUTE A: GREETINGS
-    if (INTENT_REGEX.GREETING.test(msg)) {
-      reply = `Hello ${userName}! 👋 Welcome to UttamSewa. How can I help you today?`;
-    } 
-    // ROUTE B: CONTEXTUAL FOLLOW-UP
-    else if (INTENT_REGEX.AFFIRMATION.test(msg) && (lastAssistantMsg.includes("book this") || lastAssistantMsg.includes("schedule"))) {
-      reply = "Great! Please navigate to the Booking tab at the top to select your preferred date and time.";
+    // ==========================================
+    // 1. MAIN MENU & GREETING
+    // ==========================================
+    if (["hi", "hello", "hey", "namaste", "main menu"].includes(msg)) {
+      reply = `Hi ${userName}! Welcome to BOOKSS. How can I help you today?`;
+      options = ["Book a Service", "My Bookings", "Cancel a Booking", "My Profile", "Help & Support"];
     }
-    // ROUTE C: EXPLICIT BOOKING REQUEST
-    else if (wantsBooking) {
-      if (keyword) {
-        const { results } = await db.prepare("SELECT name, price FROM services WHERE name LIKE ? OR category LIKE ? LIMIT 1").bind(`%${keyword}%`, `%${keyword}%`).all();
-        reply = results.length > 0 
-          ? `I found ${results[0].name} (₹${results[0].price}). Please navigate to the Booking tab to schedule this service.`
-          : `I couldn't find exactly what you're looking for. Could you clarify the service?`;
-      } else {
-        reply = "I can help you book! Which specific service do you need? (e.g., Electrician, Cleaning, Plumbing, AC Repair)";
+    
+    // ==========================================
+    // 2. HELP & CUSTOMER SUPPORT (NEW)
+    // ==========================================
+    else if (msg.includes("help") || msg.includes("support") || msg.includes("customer care") || msg.includes("contact")) {
+      reply = `We are here to help! For any queries or issues, please contact our Customer Care at +91-98765-43210 or email us at support@bookss.com.`;
+      options = ["Main Menu"];
+    }
+
+    // ==========================================
+    // 3. USER PROFILE DETAILS (NEW - DATABASE DRIVEN)
+    // ==========================================
+    else if (msg.includes("my profile") || msg.includes("my details") || msg.includes("account")) {
+      try {
+        // Assuming you have a 'users' table with email and phone. 
+        // If these columns don't exist, it will safely fall to the catch block.
+        const { results: userProfile } = await db.prepare("SELECT email, phone FROM users WHERE name = ?").bind(userName).all();
+        
+        if (userProfile.length > 0) {
+          const u = userProfile[0] as any;
+          reply = `Here are your account details:\n👤 Name: ${userName}\n📧 Email: ${u.email || 'Not updated'}\n📱 Phone: ${u.phone || 'Not updated'}`;
+        } else {
+          reply = `👤 Name: ${userName}\n(Update your profile in the app to see more details here).`;
+        }
+        options = ["Main Menu"];
+      } catch (e) {
+        // Safe fallback just in case 'users' table or columns are missing
+        reply = `👤 Name: ${userName}\n(Your complete details are securely stored in your account settings).`;
+        options = ["Main Menu"];
       }
     }
-    // ROUTE D: SPECIFIC SERVICE INQUIRY
-    else if (keyword) {
-      const { results } = await db.prepare("SELECT name, price, description FROM services WHERE name LIKE ? OR category LIKE ? LIMIT 1").bind(`%${keyword}%`, `%${keyword}%`).all();
-      
+
+    // ==========================================
+    // 4. CANCELLATION INTENT
+    // ==========================================
+    else if (msg === "cancel a booking" || (msg.includes("cancel") && !msg.includes("#"))) {
+      const { results } = await db.prepare(`
+        SELECT b.id, s.name as service_name 
+        FROM bookings b
+        JOIN services s ON b.service_id = s.id
+        WHERE b.user_name = ? AND b.status != 'Cancelled'
+        ORDER BY b.created_at DESC LIMIT 10
+      `).bind(userName).all();
+
       if (results.length > 0) {
-        const s = results[0] as any;
-        reply = wantsPrice 
-          ? `The cost for ${s.name} is ₹${s.price}.`
-          : `${s.name}:\nDetails: ${s.description || "Professional service"}.\nPrice: ₹${s.price}.\nWould you like to book this?`;
+        reply = `Alright ${userName}, which booking would you like to cancel?`;
+        options = results.map((b: any) => `Cancel #${b.id} (${b.service_name})`);
+        options.push("Main Menu");
+      } else {
+        reply = "No active bookings found that can be cancelled.";
+        options = ["Book a Service", "Main Menu"];
       }
     }
-    // ROUTE E: GENERAL PRICE LIST
-    else if (wantsPrice) {
-      const { results } = await db.prepare("SELECT name, price FROM services ORDER BY price ASC LIMIT 5").all();
-      reply = "Here is our standard price list:\n" + results.map((s: any) => `• ${s.name} - ₹${s.price}`).join("\n");
-    }
 
-    // ROUTE F: AI FALLBACK (LLaMA-3)
-    if (!reply) {
-      // Format history correctly for LLaMA (Oldest to Newest)
-      const formattedHistory = history.reverse().map((row: any) => ({ role: row.role, content: row.content }));
-      
-      const messages = [
-        { role: 'system', content: `You are a professional home services assistant for a platform called UttamSewa. You are assisting ${userName}. Keep answers helpful, polite, and under 3 sentences.` },
-        ...formattedHistory,
-        { role: 'user', content: message }
-      ];
+    // ==========================================
+    // 5. EXECUTE CANCELLATION
+    // ==========================================
+    else if (msg.includes("cancel #")) {
+      const bookingId = msg.split('#')[1].split(' ')[0];
 
       try {
-        const aiRes = await c.env.AI.run('@cf/meta/llama-3-8b-instruct', { messages });
-        reply = aiRes.response || "I am currently upgrading my systems. Please try asking about our prices or specific services!";
-      } catch (err) {
-        console.error("[AI ERROR]:", err);
-        reply = "I'm having a little trouble connecting to my AI core right now. I can still help you check prices or book an electrician/plumber!";
+        await db.prepare("UPDATE bookings SET status = 'Cancelled' WHERE id = ?")
+          .bind(bookingId)
+          .run();
+        
+        reply = `Success! Booking #${bookingId} has been cancelled. Its status will show as 'Cancelled' in your booking list.`;
+        options = ["My Bookings", "Book a Service", "Main Menu"];
+      } catch (e) {
+        reply = "Error: Failed to update the database. Please try again.";
+        options = ["Main Menu"];
       }
     }
 
-    // Save state and respond
-    await saveConversation(db, sessionId, message, reply);
-    return c.json({ success: true, reply });
+    // ==========================================
+    // 6. MY BOOKINGS
+    // ==========================================
+    else if (msg === "my bookings") {
+      const { results } = await db.prepare(`
+        SELECT b.id, b.booking_date, b.status, s.name as service_name 
+        FROM bookings b
+        JOIN services s ON b.service_id = s.id
+        WHERE b.user_name = ? AND b.status != 'Cancelled' 
+        ORDER BY b.created_at DESC LIMIT 10
+      `).bind(userName).all();
 
-  } catch (err: any) {
-    console.error("[CHAT FATAL ERROR]:", err);
-    return c.json({ error: "Internal server error occurred." }, 500);
+      if (results.length > 0) {
+        reply = `Here are your active BOOKSS bookings:\n`;
+        results.forEach((b: any, i: number) => {
+          reply += `\n${i+1}. ${b.service_name} (#${b.id})\n${b.booking_date}\n Status: ${b.status}\n`;
+        });
+        options = ["Book a Service", "Cancel a Booking", "Main Menu"];
+      } else {
+        reply = "You have no active or pending bookings.";
+        options = ["Book a Service", "Main Menu"];
+      }
+    }
+
+    // ==========================================
+    // 7. BOOK A SERVICE (Shows Categories)
+    // ==========================================
+    else if (msg === "book a service") {
+      const { results } = await db.prepare("SELECT DISTINCT category FROM services").all();
+      reply = "Please select a category:";
+      options = results.map((r: any) => r.category);
+    }
+    
+    // ==========================================
+    // 8. CONFIRM BOOKING (Final step)
+    // ==========================================
+    else if (msg === "yes, book now") {
+      reply = "Great! Please navigate to the 'Booking' or 'Cart' tab to finalize your date and time.";
+      options = ["My Bookings", "Main Menu"];
+    }
+
+    // ==========================================
+    // 9. DYNAMIC CHECK: CATEGORY or SERVICE NAME
+    // ==========================================
+    else {
+      // Check if it's a Category Name
+      const { results: services } = await db.prepare(
+        "SELECT name FROM services WHERE LOWER(category) = ?"
+      ).bind(msg).all();
+
+      if (services.length > 0) {
+        reply = `Which ${message} service do you need?`;
+        options = services.map((s: any) => s.name);
+        options.push("Main Menu");
+      } 
+      else {
+        // Check if it's a Specific Service Name
+        const { results: serviceDetail } = await db.prepare(
+          "SELECT price, description FROM services WHERE LOWER(name) = ?"
+        ).bind(msg).all();
+
+        if (serviceDetail.length > 0) {
+          const s = serviceDetail[0] as any;
+          reply = `${message} Details:\n\nPrice: ₹${s.price}\nDescription: ${s.description}\n\nWould you like to book this service?`;
+          options = ["Yes, Book Now", "Main Menu"];
+        }
+      }
+    }
+    
+    // ==========================================
+    // 10. AI FALLBACK (SMART CUSTOMER CARE)
+    // ==========================================
+    if (!reply) {
+      try {
+        const aiRes = await c.env.AI.run('@cf/meta/llama-3-8b-instruct', {
+          messages: [
+            { 
+              role: 'system', 
+              content: `You are the BOOKSS AI. Be brief. 1 sentence max. If you cannot answer a question, tell the user to contact customer care at +91-98765-43210. Tell ${userName} to use buttons.` 
+            },
+            { role: 'user', content: message }
+          ]
+        });
+        reply = aiRes.response.split(/[.!?]/)[0] + ". Please select an option:";
+        options = ["Help & Support", "Main Menu"];
+      } catch (e) {
+        reply = "I'm having a connection issue. Please use the menu buttons:";
+        options = ["Help & Support", "Main Menu"];
+      }
+    }
+
+    await saveConversation(db, sessionId, message, reply);
+    return c.json({ success: true, reply, options });
+
+  } catch (err) {
+    return c.json({ success: false, error: "Internal Server Error" }, 500);
   }
 });
 
-export default app;
+export default chat;

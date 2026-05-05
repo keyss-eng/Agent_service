@@ -30,7 +30,7 @@ app.get('/', (c) => {
 
 app.route('/api/auth', authRoutes)
 app.route('/api/services', serviceRoutes)
-app.route('/api/book', bookingRoutes)
+app.route('/api/booking', bookingRoutes)
 app.route('/api/chat', chatRoutes)
 
 export default app
