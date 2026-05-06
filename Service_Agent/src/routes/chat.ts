@@ -7,7 +7,6 @@ const chat = new Hono<{ Bindings: Bindings }>()
 const DEFAULT_MENU = ["Book a Service", "My Bookings", "Cancel a Booking", "My Profile", "Help & Support"];
 const FALLBACK_MENU = ["Book a Service", "Help & Support", "Main Menu"];
 
-// --- Helper Functions ---
 const saveConversation = async (db: D1Database, sessionId: string, userMsg: string, aiMsg: string) => {
   try {
     await db.prepare(
@@ -35,7 +34,7 @@ chat.post('/', async (c) => {
     let systemInstruction = "";
     let options: string[] = [];
 
-    // 1. General Greetings & Main Menu
+    // 1.Main Menu
     if (["hi", "hello", "hey", "namaste", "main menu"].includes(msg)) {
       systemInstruction = `Greet the user warmly. Welcome them to BOOKSS. Ask how you can help them today.`;
       options = DEFAULT_MENU;
@@ -131,12 +130,19 @@ chat.post('/', async (c) => {
     }
 
     // 6. View Service Categories
-    else if (msg === "book a service" || msg === "services") {
-      const { results } = await db.prepare("SELECT DISTINCT category FROM services").all();
-      const categories = results.map((r: any) => r.category).join(", ");
-      systemInstruction = `Tell the user we have these categories: ${categories}. Ask which one they need.`;
-      options = results.map((r: any) => r.category);
-    }
+ else if (msg.includes("service")) {
+  const { results } = await db.prepare(
+    "SELECT DISTINCT category FROM services"
+  ).all();
+
+  const categories = results.map((r: any) => r.category);
+
+  reply = `We currently provide these services:\n\n${categories
+    .map((c: string) => `• ${c}`)
+    .join("\n")}\n\nWhich service do you need?`;
+
+  options = categories;
+}
 
     // 7. Core AI Intent Engine (Routing & Direct Booking)
     if (!reply) {
@@ -178,6 +184,7 @@ chat.post('/', async (c) => {
         const aiRes = await c.env.AI.run('@cf/meta/llama-3-8b-instruct', {
           messages: [{ role: 'system', content: aiPrompt }]
         });
+        console.log("AI Raw Response:", aiRes.response);
 
         // Robust JSON parsing fallback
         let aiData = { action: 'chat', service_id: null, date: null, time: null, reply: "I'm sorry, could you clarify what you need help with?" };
